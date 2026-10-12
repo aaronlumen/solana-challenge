@@ -23,6 +23,7 @@ pub struct MintEdition<'info> {
     #[account(
         mut, 
         constraint = user_token_account.owner == user_wallet.key() @ Errors::InvalidTokenOwner,
+        constraint = user_token_account.mint == new_mint.key() @ Errors::InvalidTokenMint,
     )]
     pub user_token_account: Box<Account<'info, TokenAccount>>,
 
@@ -55,7 +56,8 @@ pub struct MintEdition<'info> {
     #[account(mut)]
     pub new_mint: Signer<'info>,
 
-    /// CHECK: checked in program
+    /// CHECK: pinned to the Metaplex Token Metadata program
+    #[account(address = mpl_token_metadata::id())]
     pub token_metadata_program: UncheckedAccount<'info>,
 
     /// master edtion nft info pda
@@ -105,7 +107,10 @@ pub struct MintEdition<'info> {
 
 
 impl<'info> MintEdition<'info> {
-    pub fn process(&mut self, pda_bump: u8, args: MintEditionArgs) -> Result<()> {
+    pub fn process(&mut self, pda_bump: u8, authority_bump: u8, args: MintEditionArgs) -> Result<()> {
+        validate_attribute(args.health)?;
+        validate_attribute(args.mana)?;
+        validate_attribute(args.power)?;
 
         // get edtion number of master edtion
         let edition = get_supply_off_master_edition(&self.master_edition.to_account_info())?
@@ -124,8 +129,6 @@ impl<'info> MintEdition<'info> {
             ),
             1,
         )?;
-
-        let (_pda, bump) = Pubkey::find_program_address(&[NFT_AUTHORITY.as_ref()], &crate::ID);
 
         // mint edtion nft from master edtion NFT
         let tx = mpl_token_metadata::instruction::mint_new_edition_from_master_edition_via_token(
@@ -162,8 +165,8 @@ impl<'info> MintEdition<'info> {
                 self.token_program.to_account_info().clone(),
                 self.system_program.to_account_info().clone(),
             ],
-            &[&[NFT_AUTHORITY.as_ref(), &[bump]]],
-        ).ok();
+            &[&[NFT_AUTHORITY.as_ref(), &[authority_bump]]],
+        )?;
 
         self.nft_attribute.user_wallet = self.user_wallet.key();
         self.nft_attribute.nft_mint = self.new_mint.key();

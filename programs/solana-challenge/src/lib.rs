@@ -20,7 +20,8 @@ pub mod solana_challenge {
     ) -> Result<()> {
         // get bump value
         let bump = *ctx.bumps.get("nft_type").unwrap();
-        ctx.accounts.process(bump, args)
+        let slot_bump = *ctx.bumps.get("kind_slot").unwrap();
+        ctx.accounts.process(bump, slot_bump, args)
     }
 
     // mint edition nft with selected MasterEdition NFT
@@ -30,7 +31,8 @@ pub mod solana_challenge {
     ) -> Result<()> {
         // get bump value
         let bump = *ctx.bumps.get("nft_attribute").unwrap();
-        ctx.accounts.process(bump, args)
+        let authority_bump = *ctx.bumps.get("nft_authority").unwrap();
+        ctx.accounts.process(bump, authority_bump, args)
     }
 
     // create PDA to save the reputation point 
@@ -49,6 +51,14 @@ pub mod solana_challenge {
         // get bump value
         let bump = *ctx.bumps.get("stake_info").unwrap();
         ctx.accounts.process(bump)
+    }
+
+    // unstake edition NFT: return it and subtract its points
+    pub fn unstake(
+        ctx: Context<Unstake>,
+    ) -> Result<()> {
+        let authority_bump = *ctx.bumps.get("nft_authority").unwrap();
+        ctx.accounts.process(authority_bump)
     }
 }
 

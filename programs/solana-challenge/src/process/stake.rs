@@ -15,7 +15,7 @@ pub struct Stake<'info> {
     /// edtion nft mint
     pub nft_mint: Box<Account<'info, Mint>>,
 
-    /// edtion tnft oken account
+    /// edtion nft token account (ownership of the NFT is the staking right)
     #[account(
         mut,
         constraint = user_token_account.mint == nft_mint.key() @ Errors::InvalidTokenMint,
@@ -23,7 +23,7 @@ pub struct Stake<'info> {
     )]
     pub user_token_account: Box<Account<'info, TokenAccount>>,
 
-    /// CHECK: Safe account
+    /// CHECK: PDA, seeds verified
     #[account(
         seeds = [
             NFT_AUTHORITY.as_ref()
@@ -57,7 +57,6 @@ pub struct Stake<'info> {
             nft_mint.key().as_ref()
         ],
         bump = nft_attribute.bump,
-        constraint = nft_attribute.user_wallet == user_wallet.key() @ Errors::AccessDenied
     )]
     pub nft_attribute: Box<Account<'info, NftAttribute>>,
 
@@ -95,31 +94,18 @@ impl<'info> Stake<'info> {
             1,
         )?;
 
-        let mut reputation_point = 0;
-
-        match self.nft_attribute.nft_kind {
-            0 => {
-                // strength nft
-                reputation_point = (self.nft_attribute.health*2).checked_add(self.nft_attribute.mana).unwrap().checked_add(self.nft_attribute.power).unwrap();
-            },
-            1 => {
-                // agility nft
-                reputation_point = self.nft_attribute.health.checked_add(self.nft_attribute.mana).unwrap().checked_add(self.nft_attribute.power*2).unwrap();
-            },
-            2 => {
-                // inteligence nft
-                reputation_point = (self.nft_attribute.health*2).checked_add(self.nft_attribute.mana*2).unwrap().checked_add(self.nft_attribute.power).unwrap();
-            },
-            _ => {
-                return Err(error!(Errors::InvalidNftKind));
-            }
-        }
+        let points = self.nft_attribute.points()?;
 
         self.stake_info.user_wallet = self.user_wallet.key();
         self.stake_info.nft_mint = self.nft_mint.key();
+        self.stake_info.points = points;
         self.stake_info.bump = bump;
 
-        self.reputation_info.reputation_point = self.reputation_info.reputation_point.checked_add(reputation_point).unwrap();
+        self.reputation_info.reputation_point = self
+            .reputation_info
+            .reputation_point
+            .checked_add(points)
+            .ok_or(Errors::MathOverflow)?;
 
         Ok(())
     }

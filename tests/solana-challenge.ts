@@ -3,6 +3,7 @@ import { Program } from "@project-serum/anchor";
 import { SolanaChallenge } from "../target/types/solana_challenge";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, createInitializeMintInstruction, MINT_SIZE } from '@solana/spl-token';
 import { PublicKey, Transaction, Keypair, LAMPORTS_PER_SOL, sendAndConfirmTransaction } from "@solana/web3.js";
+import { assert } from "chai";
 import * as constants from "./constants";
 import { loadWalletKey } from "./utils";
 import { createAuctionHouseOperationHandler, findEditionMarkerPda, findEditionPda, findMetadataPda } from "@metaplex-foundation/js";
@@ -55,6 +56,15 @@ describe("solana-challenge", async () => {
         ],
         program.programId
       );
+
+      // get kind slot pda (one per kind)
+      const [kindSlotPda] = await PublicKey.findProgramAddress(
+        [
+          Buffer.from(constants.KIND_SLOT),
+          Buffer.from([i]),
+        ],
+        program.programId
+      );
   
       // get ata of master edition nft of admin wallet
       const adminTokenAccount = await getAssociatedTokenAddress(
@@ -81,7 +91,7 @@ describe("solana-challenge", async () => {
         )
   
         await program.rpc.escrowMasterNft({
-          kind: 0
+          kind: i
           },
           {
             accounts: {
@@ -91,6 +101,7 @@ describe("solana-challenge", async () => {
               nftAuthority: nftAuthorityPda,
               nftAuthorityTokenAccount: nftAuthorityTokenAccount,
               nftType: nftKindPda,
+              kindSlot: kindSlotPda,
               systemProgram: anchor.web3.SystemProgram.programId,
               tokenProgram: TOKEN_PROGRAM_ID,
             },
@@ -298,6 +309,39 @@ describe("solana-challenge", async () => {
     );
 
     let reputationPointInfo = await program.account.reputationPointInfo.fetch(reputationInfoPda);
-    console.log("Reputation Point Info: ", reputationPointInfo.reputationPoint)
+    console.log("Reputation Point Info: ", reputationPointInfo.reputationPoint.toString())
+    // strength: health*2 + mana + power = 50*2 + 45 + 87
+    assert.equal(reputationPointInfo.reputationPoint.toNumber(), 232);
+  });
+
+  it("Unstake edition NFT!", async () => {
+    const userTokenAccount = await getAssociatedTokenAddress(newEditionNft.publicKey, user.publicKey);
+    const nftAuthorityTokenAccount = await getAssociatedTokenAddress(newEditionNft.publicKey, nftAuthorityPda, true);
+    const [stakeInfoPda] = await PublicKey.findProgramAddress(
+      [Buffer.from(constants.NFT_STAKE), newEditionNft.publicKey.toBuffer()],
+      program.programId
+    );
+    const [reputationInfoPda] = await PublicKey.findProgramAddress(
+      [Buffer.from(constants.USER_REPUTATION_INFO), user.publicKey.toBuffer()],
+      program.programId
+    );
+
+    await program.rpc.unstake({
+      accounts: {
+        userWallet: user.publicKey,
+        nftMint: newEditionNft.publicKey,
+        userTokenAccount: userTokenAccount,
+        nftAuthority: nftAuthorityPda,
+        nftAuthorityTokenAccount: nftAuthorityTokenAccount,
+        stakeInfo: stakeInfoPda,
+        reputationInfo: reputationInfoPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      },
+      signers: [user],
+    });
+
+    const info = await program.account.reputationPointInfo.fetch(reputationInfoPda);
+    assert.equal(info.reputationPoint.toNumber(), 0);
+    assert.isNull(await provider.connection.getAccountInfo(stakeInfoPda));
   });
 });

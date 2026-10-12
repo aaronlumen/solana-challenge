@@ -1,5 +1,7 @@
 export const NFT_KIND = "nft-kind1";
 
+export const KIND_SLOT = "kind-slot";
+
 export const NFT_AUTHORITY = "nft-authority";
 
 export const ATTRIBUTE = "nft-attribute";

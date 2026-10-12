@@ -8,12 +8,16 @@ use crate::states::*;
 use std::mem::size_of;
 
 #[derive(Accounts)]
+#[instruction(args: EscrowMasterNftArgs)]
 pub struct EscrowMasterNft<'info> {
-    // admin wallet to escrow the MasterEdition NFT 
-    #[account(mut)]
+    // only the hardcoded admin can register MasterEdition NFTs
+    #[account(mut, address = admin::ID @ Errors::AccessDenied)]
     pub admin: Signer<'info>,
 
-    /// master edtion nft mint
+    /// master edtion nft mint (must be a 1-of-1)
+    #[account(
+        constraint = nft_mint.decimals == 0 && nft_mint.supply == 1 @ Errors::NotAnNft
+    )]
     pub nft_mint: Box<Account<'info, Mint>>,
 
     /// master edtion token account
@@ -24,7 +28,7 @@ pub struct EscrowMasterNft<'info> {
     )]
     pub admin_token_account: Box<Account<'info, TokenAccount>>,
 
-    /// CHECK: Safe account
+    /// CHECK: PDA, seeds verified
     #[account(
         seeds = [
             NFT_AUTHORITY.as_ref()
@@ -54,6 +58,19 @@ pub struct EscrowMasterNft<'info> {
     )]
     pub nft_type: Box<Account<'info, NftKind>>,
 
+    // one slot per kind, so each kind can only be registered once
+    #[account(
+        init,
+        seeds = [
+            KIND_SLOT.as_ref(),
+            &[args.kind]
+        ],
+        bump,
+        payer = admin,
+        space = 8 + size_of::<KindSlot>(),
+    )]
+    pub kind_slot: Box<Account<'info, KindSlot>>,
+
     /// system program
     pub system_program: Program<'info, System>,
 
@@ -63,7 +80,8 @@ pub struct EscrowMasterNft<'info> {
 
 
 impl<'info> EscrowMasterNft<'info> {
-    pub fn process(&mut self, bump: u8, args: EscrowMasterNftArgs) -> Result<()> {
+    pub fn process(&mut self, bump: u8, slot_bump: u8, args: EscrowMasterNftArgs) -> Result<()> {
+        validate_kind(args.kind)?;
 
         token::transfer(
             CpiContext::new(
@@ -80,6 +98,9 @@ impl<'info> EscrowMasterNft<'info> {
         self.nft_type.nft_mint = self.nft_mint.key();
         self.nft_type.nft_kind = args.kind;
         self.nft_type.bump = bump;
+
+        self.kind_slot.nft_mint = self.nft_mint.key();
+        self.kind_slot.bump = slot_bump;
 
         Ok(())
     }
